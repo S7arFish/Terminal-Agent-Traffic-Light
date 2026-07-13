@@ -1,0 +1,11 @@
+.vscode/**
+releases/**
+node_modules/**
+src/**
+test/**
+webview/index.html
+webview/main.ts
+desktop/*.ts
+*.ts
+vitest.config.ts
+esbuild.mjs

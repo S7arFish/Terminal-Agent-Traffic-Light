@@ -1,0 +1,48 @@
+{
+  "name": "terminal-agent-traffic-light",
+  "displayName": "Terminal Agent Traffic Light",
+  "description": "See when an integrated terminal agent needs your attention.",
+  "version": "0.2.0",
+  "publisher": "local",
+  "engines": { "vscode": "^1.93.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished", "onView:terminalAgentTrafficLight.view", "onCommand:terminalAgentTrafficLight.startMonitoring"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": { "activitybar": [{ "id": "terminalAgentTrafficLight", "title": "Agent traffic light", "icon": "resources/icon.svg" }] },
+    "views": { "terminalAgentTrafficLight": [{ "id": "terminalAgentTrafficLight.view", "name": "Terminal agent", "type": "webview" }] },
+    "commands": [
+      { "command": "terminalAgentTrafficLight.selectActiveTerminal", "title": "Terminal Agent Traffic Light: Select Active Terminal" },
+      { "command": "terminalAgentTrafficLight.startMonitoring", "title": "Terminal Agent Traffic Light: Start Monitoring" },
+      { "command": "terminalAgentTrafficLight.stopMonitoring", "title": "Terminal Agent Traffic Light: Stop Monitoring" },
+      { "command": "terminalAgentTrafficLight.showDashboard", "title": "Terminal Agent Traffic Light: Show Dashboard" },
+      { "command": "terminalAgentTrafficLight.replyYes", "title": "Terminal Agent Traffic Light: Reply Yes" },
+      { "command": "terminalAgentTrafficLight.replyNo", "title": "Terminal Agent Traffic Light: Reply No" },
+      { "command": "terminalAgentTrafficLight.openFloatingWindow", "title": "Terminal Agent Traffic Light: Open Floating Window" },
+      { "command": "terminalAgentTrafficLight.closeFloatingWindow", "title": "Terminal Agent Traffic Light: Close Floating Window" }
+    ],
+    "configuration": { "title": "Terminal Agent Traffic Light", "properties": {
+      "terminalAgentTrafficLight.enabled": { "type": "boolean", "default": true },
+      "terminalAgentTrafficLight.autoSelectActiveTerminal": { "type": "boolean", "default": true },
+      "terminalAgentTrafficLight.playSound": { "type": "boolean", "default": true },
+      "terminalAgentTrafficLight.maxBufferedCharacters": { "type": "number", "default": 8000, "minimum": 1000, "maximum": 100000 },
+      "terminalAgentTrafficLight.customPromptPatterns": { "type": "array", "default": [], "items": { "type": "string" } },
+      "terminalAgentTrafficLight.showCompletionAsRed": { "type": "boolean", "default": true }
+      ,"terminalAgentTrafficLight.autoOpenFloatingWindow": { "type": "boolean", "default": false, "description": "Open the desktop floating light when VS Code starts." }
+    }}
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run typecheck && npm run test:unit && npm run build",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "test:integration": "node ./test/integration/runTest.js",
+    "package": "npm run package:mac",
+    "package:mac": "node scripts/package-mac.mjs",
+    "desktop": "npm run build && electron dist/desktop-main.js"
+  },
+  "dependencies": { "electron": "^37.2.0" },
+  "devDependencies": { "@types/node": "^22.0.0", "@types/vscode": "^1.93.0", "@vscode/test-electron": "^2.4.0", "@vscode/vsce": "^3.2.0", "esbuild": "^0.24.0", "glob": "^11.0.0", "mocha": "^11.0.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }
+}

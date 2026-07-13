@@ -1,0 +1,2 @@
+"use strict";var e=require("electron");e.contextBridge.exposeInMainWorld("trafficLightDesktop",{getConnection:()=>e.ipcRenderer.invoke("bridge:get-connection"),setAlwaysOnTop:o=>e.ipcRenderer.invoke("window:set-always-on-top",o),isAlwaysOnTop:()=>e.ipcRenderer.invoke("window:is-always-on-top"),setExpanded:(o,n,i)=>e.ipcRenderer.invoke("window:set-expanded",o,n,i),close:()=>e.ipcRenderer.send("window:close")});
+//# sourceMappingURL=desktop-preload.js.map
