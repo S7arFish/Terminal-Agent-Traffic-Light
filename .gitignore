@@ -1,0 +1,7 @@
+node_modules/
+releases/
+resources/electron-darwin-arm64.zip
+.DS_Store
+*.log
+.vscode-test/
+coverage/
