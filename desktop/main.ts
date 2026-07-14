@@ -2,11 +2,21 @@ import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DeferredBoundsSaver } from './deferredBoundsSaver';
+import { AgentHub, type AgentHubConnection } from './agentHub';
+
+const isStandalone = !process.env.TRAFFIC_LIGHT_PORT;
+if (isStandalone) {
+  app.setName('Agent Light');
+  app.setPath('userData', process.env.AGENT_LIGHT_USER_DATA_PATH || join(app.getPath('appData'), 'Agent Light'));
+}
+const ownsSingleInstance = !isStandalone || app.requestSingleInstanceLock();
 
 let window: BrowserWindow | undefined;
 let expanded = false;
 let collapsedBounds: Electron.Rectangle | undefined;
 let boundsSaver: DeferredBoundsSaver<Electron.Rectangle> | undefined;
+let localHub: AgentHub | undefined;
+let connection: AgentHubConnection | { endpoint: string; token: string; protocol: 'terminal/1' } | undefined;
 const COLLAPSED_SIZE = 124;
 const DEFAULT_EXPANDED_SIZE = { width: 360, height: 360 };
 
@@ -22,6 +32,9 @@ function createWindow(): void {
     minHeight: COLLAPSED_SIZE,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
+    vibrancy: process.platform === 'darwin' ? 'hud' : undefined,
+    visualEffectState: process.platform === 'darwin' ? 'active' : undefined,
     resizable: false,
     alwaysOnTop: saved.alwaysOnTop ?? true,
     show: false,
@@ -35,15 +48,23 @@ function createWindow(): void {
   boundsSaver = new DeferredBoundsSaver(() => expanded, () => window!.getBounds(), bounds => { collapsedBounds = bounds; if (window) writeSettings({ ...readSettings(), bounds, alwaysOnTop: window.isAlwaysOnTop() }); });
   window.setAlwaysOnTop(saved.alwaysOnTop ?? true, 'floating');
   if (process.platform === 'darwin') window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  window.loadFile(join(process.env.TRAFFIC_LIGHT_EXTENSION_PATH ?? app.getAppPath(), 'desktop', 'index.html'));
-  window.once('ready-to-show', () => window?.showInactive());
+  window.loadFile(join(assetRoot(), 'desktop', 'index.html'));
+  window.once('ready-to-show', () => {
+    window?.showInactive();
+    if (process.env.AGENT_LIGHT_CAPTURE_PATH && window) {
+      expanded = true;
+      window.setSize(400, 520, false);
+      void window.webContents.executeJavaScript('document.body.classList.remove("collapsed")');
+    }
+  });
   window.on('move', scheduleSave); window.on('resize', scheduleSave);
   window.on('closed', () => { boundsSaver?.cancel(); boundsSaver = undefined; window = undefined; app.quit(); });
 }
 
 ipcMain.handle('window:set-always-on-top', (_event, value: boolean) => { if (!window) return false; window.setAlwaysOnTop(value, 'floating'); writeSettings({ ...readSettings(), alwaysOnTop: value, bounds: collapsedBounds }); return value; });
 ipcMain.handle('window:is-always-on-top', () => window?.isAlwaysOnTop() ?? false);
-ipcMain.handle('bridge:get-connection', () => ({ endpoint: `http://127.0.0.1:${Number(process.env.TRAFFIC_LIGHT_PORT)}`, token: process.env.TRAFFIC_LIGHT_TOKEN ?? '' }));
+ipcMain.handle('bridge:get-connection', () => ({ ...connection, capturePath: process.env.AGENT_LIGHT_CAPTURE_PATH }));
+ipcMain.handle('diagnostics:capture', async (_event, path: string) => { if (!window || !process.env.AGENT_LIGHT_CAPTURE_PATH || path !== process.env.AGENT_LIGHT_CAPTURE_PATH) return false; const image = await window.webContents.capturePage(); writeFileSync(path, image.toPNG()); return true; });
 ipcMain.handle('window:set-expanded', (_event, value: boolean, reduceMotion = false, preferredSize?: { width: number; height: number }) => {
   if (!window || expanded === value) return expanded;
   if (value) {
@@ -58,6 +79,11 @@ ipcMain.handle('window:set-expanded', (_event, value: boolean, reduceMotion = fa
 ipcMain.on('window:close', () => window?.close());
 
 function scheduleSave(): void { boundsSaver?.schedule(); }
+function assetRoot(): string {
+  if (process.env.TRAFFIC_LIGHT_EXTENSION_PATH) return process.env.TRAFFIC_LIGHT_EXTENSION_PATH;
+  if (existsSync(join(app.getAppPath(), 'desktop', 'index.html'))) return app.getAppPath();
+  return join(app.getAppPath(), '..');
+}
 function settingsPath(): string { return join(app.getPath('userData'), 'floating-window.json'); }
 function readSettings(): { bounds?: Electron.Rectangle; alwaysOnTop?: boolean } { try { return existsSync(settingsPath()) ? JSON.parse(readFileSync(settingsPath(), 'utf8')) : {}; } catch { return {}; } }
 function writeSettings(value: unknown): void { try { writeFileSync(settingsPath(), JSON.stringify(value)); } catch { /* settings are optional */ } }
@@ -88,5 +114,21 @@ function interpolate(from: number, to: number, progress: number): number { retur
 function easeOutQuint(value: number): number { return 1 - Math.pow(1 - value, 5); }
 function easeInOutCubic(value: number): number { return value < .5 ? 4 * value * value * value : 1 - Math.pow(-2 * value + 2, 3) / 2; }
 
-app.whenReady().then(createWindow);
-app.on('window-all-closed', () => app.quit());
+async function start(): Promise<void> {
+  if (process.env.TRAFFIC_LIGHT_PORT) {
+    connection = { endpoint: `http://127.0.0.1:${Number(process.env.TRAFFIC_LIGHT_PORT)}`, token: process.env.TRAFFIC_LIGHT_TOKEN ?? '', protocol: 'terminal/1' };
+  } else {
+    localHub = new AgentHub(app.getPath('userData'));
+    connection = await localHub.start();
+  }
+  createWindow();
+}
+
+if (!ownsSingleInstance) {
+  app.quit();
+} else {
+  if (isStandalone) app.on('second-instance', () => { window?.show(); window?.focus(); });
+  app.whenReady().then(start).catch(error => { console.error('Agent Light failed to start', error); app.quit(); });
+  app.on('before-quit', () => localHub?.stop());
+  app.on('window-all-closed', () => app.quit());
+}
