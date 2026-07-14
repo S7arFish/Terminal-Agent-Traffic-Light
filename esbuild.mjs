@@ -8,5 +8,6 @@ const webview = { ...common, entryPoints: ['webview/main.ts'], outfile: 'dist/we
 const desktopMain = { ...common, entryPoints: ['desktop/main.ts'], outfile: 'dist/desktop-main.js', platform: 'node', format: 'cjs', external: ['electron'] };
 const desktopPreload = { ...common, entryPoints: ['desktop/preload.ts'], outfile: 'dist/desktop-preload.js', platform: 'node', format: 'cjs', external: ['electron'] };
 const desktopRenderer = { ...common, entryPoints: ['desktop/renderer.ts'], outfile: 'dist/desktop-renderer.js', platform: 'browser', format: 'iife' };
-const builds = [extension, webview, desktopMain, desktopPreload, desktopRenderer];
+const settingsRenderer = { ...common, entryPoints: ['desktop/settingsRenderer.ts'], outfile: 'dist/settings-renderer.js', platform: 'browser', format: 'iife' };
+const builds = [extension, webview, desktopMain, desktopPreload, desktopRenderer, settingsRenderer];
 if (watch) { for (const build of builds) await esbuild.context(build).then(x => x.watch()); } else { for (const build of builds) await esbuild.build(build); }

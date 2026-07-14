@@ -3,10 +3,9 @@ import type { MonitorStateSnapshot, TrafficLightState } from '../src/contracts/s
 import { quickReplyActions, type QuickReplyActionId } from '../src/contracts/terminal';
 import { ExpansionCoordinator } from './expansionCoordinator';
 import { estimatePanelSize, type PanelSize } from './panelSizing';
+import type { ConnectionInfo } from './apiTypes';
 
-type ConnectionInfo = { endpoint: string; token: string; protocol?: 'agent-light/1' | 'terminal/1'; capturePath?: string };
 type ViewSession = { key: string; sessionId: string; provider: AgentProvider; providerLabel: string; phase: AgentPhase; title: string; detail: string; message?: string; workspace?: string; requestId?: string; actions: AgentAction[]; legacy?: MonitorStateSnapshot };
-declare global { interface Window { trafficLightDesktop: { getConnection(): Promise<ConnectionInfo>; setAlwaysOnTop(value: boolean): Promise<boolean>; isAlwaysOnTop(): Promise<boolean>; setExpanded(value: boolean, reduceMotion: boolean, preferredSize?: PanelSize): Promise<boolean>; capture(path: string): Promise<boolean>; close(): void } } }
 
 const api = window.trafficLightDesktop;
 const content = document.getElementById('content')!;
@@ -17,6 +16,7 @@ const close = document.getElementById('close') as HTMLButtonElement;
 const compactExpand = document.getElementById('compact-expand') as HTMLButtonElement;
 const compactPin = document.getElementById('compact-pin') as HTMLButtonElement;
 const compactClose = document.getElementById('compact-close') as HTMLButtonElement;
+const settings = document.getElementById('settings') as HTMLButtonElement;
 const live = document.getElementById('live')!;
 let sessions: ViewSession[] = [];
 let active: ViewSession | undefined;
@@ -35,8 +35,9 @@ compact.addEventListener('click', () => void setExpanded(false));
 close.addEventListener('click', () => api.close());
 compactExpand.addEventListener('click', () => void setExpanded(true));
 compactClose.addEventListener('click', () => api.close());
+settings.addEventListener('click', () => api.openSettings());
 document.getElementById('app')!.addEventListener('mouseenter', () => { if (active?.phase === 'waiting') void setExpanded(true); });
-document.getElementById('app')!.addEventListener('mouseleave', scheduleCollapse);
+document.getElementById('app')!.addEventListener('mouseleave', () => scheduleCollapse());
 void api.getConnection().then(value => { bridge = value; connect(); });
 
 function connect(): void {
@@ -70,11 +71,13 @@ function render(): void {
   light.setAttribute('aria-label', `${meta.title}：${active.detail}，点击展开详情`);
   light.append(el('span', 'orb'), el('span', 'orb-glint'));
   light.addEventListener('click', () => void setExpanded(!expansion.isExpanded));
-  content.append(light, el('h1', 'status', meta.title), el('p', 'detail', active.detail));
+  const stage = el('section', 'signal-stage');
+  stage.append(light, el('h1', 'status', meta.title), el('p', 'detail', active.detail));
   const identity = el('div', 'identity');
   identity.append(el('span', 'provider', active.providerLabel));
   if (active.workspace) identity.append(el('span', 'workspace', shortWorkspace(active.workspace)));
-  content.append(identity);
+  stage.append(identity);
+  content.append(stage);
   if (active.message) content.append(el('div', 'prompt', active.message));
   if (active.phase === 'waiting' && active.actions.length) {
     const actions = el('div', `actions${active.actions.length > 2 ? ' numbered' : ''}`);
@@ -122,7 +125,7 @@ function legacyView(snapshot: MonitorStateSnapshot): ViewSession {
   return { key: `terminal:${sessionId}`, sessionId, provider: 'terminal', providerLabel: snapshot.activeTerminal?.name ?? 'VS Code 终端', phase, title: snapshot.activeTerminal?.name ?? 'Terminal', detail: snapshot.detailText, message: snapshot.blockedPrompt?.questionText, actions, legacy: snapshot };
 }
 function toViewSession(session: AgentSession): ViewSession { return { key: `${session.provider}:${session.sessionId}`, sessionId: session.sessionId, provider: session.provider, providerLabel: providerLabels[session.provider], phase: session.phase, title: session.title ?? providerLabels[session.provider], detail: session.title ?? phaseLabels[session.phase].detail, message: session.message, workspace: session.workspace, requestId: session.requestId, actions: session.actions ?? [] }; }
-function renderEmpty(): void { content.replaceChildren(el('div', 'empty-orb'), el('h1', 'status', '等待 Agent'), el('p', 'detail', '启动已连接的 Agent 后，状态会出现在这里')); }
+function renderEmpty(): void { const stage = el('section', 'signal-stage empty-stage'); stage.append(el('div', 'empty-orb'), el('h1', 'status', '等待 Agent'), el('p', 'detail', '启动已连接的 Agent 后，状态会出现在这里')); content.replaceChildren(stage); }
 function renderDisconnected(): void { if (!active) content.replaceChildren(el('p', 'loading', '正在重新连接本机状态中心…')); }
 function setPin(value: boolean): void { for (const button of [pin, compactPin]) { button.setAttribute('aria-pressed', String(value)); button.classList.toggle('active', value); button.title = value ? '已始终置顶' : '未置顶'; } }
 async function setExpanded(value: boolean): Promise<void> { if (collapseTimer) window.clearTimeout(collapseTimer); await expansion.request(value); }

@@ -6,7 +6,7 @@ Agent Light 是一个独立的 macOS 悬浮红绿灯，用来显示本机 AI 编
 
 ## Agent Light 功能
 
-- 苹果 Control Center 风格的深色液态玻璃界面
+- 柔雾蓝粉背景、暖白半透明面板的日间液态玻璃界面
 - 透明无边框、始终置顶、跨工作区和全屏空间显示
 - 124×124 紧凑模式，悬停显示拖动、展开、置顶和关闭按钮
 - 多 Agent 会话栏，等待确认的会话自动排在前面
@@ -14,6 +14,9 @@ Agent Light 是一个独立的 macOS 悬浮红绿灯，用来显示本机 AI 编
 - Claude Code、Codex 和 OpenCode 的权限快捷回答
 - 状态变化提示音、键盘焦点样式和 `prefers-reduced-motion`
 - 本机随机端口、随机令牌和 SSE 实时状态同步
+- 首次打开自动发现本机 Agent、备份配置并安装接入，后续启动自动复查
+- 原生 macOS 应用菜单以及可通过 `Agent Light → 设置…` 或 `⌘,` 打开的设置页
+- 设置页内显示五个 Agent 的发现/连接状态，并可手动重新扫描连接
 
 ## 支持的 Agent
 
@@ -34,14 +37,22 @@ Codex 的 `PermissionRequest` 当前覆盖需要审批的 Bash、`apply_patch` �
 
 ```text
 Agent Light.app
-Agent-Light-0.3.0-darwin-arm64.dmg
+Agent-Light-0.4.0-darwin-arm64.dmg
 ```
 
 打开 DMG，把 `Agent Light.app` 拖到 `/Applications`。当前开发包使用 ad-hoc 签名，尚未 Apple 公证；首次启动若被 Gatekeeper 拦截，请在 Finder 中右键应用并选择“打开”。
 
-### 安装 Agent Adapter
+### 自动连接 Agent
 
-将应用放入 `/Applications` 后，在终端执行：
+首次打开 `Agent Light.app` 后，应用会在后台发现已使用或已安装的 Claude Code、Codex、Cursor、OpenCode 和 Hermes，并自动合并对应 Hook/Plugin 配置。无需在终端执行安装命令；以后每次启动也会重新扫描，因此后安装的 Agent 会在下次打开 Agent Light 时自动接入。
+
+也可以从 macOS 顶部菜单选择 `Agent Light → 设置…`（快捷键 `⌘,`），在“连接状态”中点击“扫描并连接”手动修复接入。
+
+被修改的现有配置会在同目录保留一份 `*.agent-light.bak` 初始备份。连接成功后请重启相应 Agent。Codex 仍需在 CLI 中运行 `/hooks` 审阅并信任新增 Hook；Hermes 首次发现 Shell Hook 时仍会请求同意——这两项安全确认不能由第三方应用代替。
+
+### 手动安装或修复 Agent Adapter
+
+通常不需要手动配置。如果自动发现失败，或需要只修复某一个接入，将应用放入 `/Applications` 后可在终端执行：
 
 ```sh
 APP="/Applications/Agent Light.app"
@@ -58,15 +69,15 @@ ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Agent Light" \
   "$APP/Contents/Resources/app/scripts/install-agent-adapters.mjs" codex
 ```
 
-安装器会保留已有配置并原子更新以下位置：
+安装器会备份、保留已有配置并原子更新以下位置：
 
 - Claude Code：`~/.claude/settings.json`
 - Codex：`~/.codex/hooks.json`
 - Cursor：`~/.cursor/hooks.json`
-- OpenCode：`~/.config/opencode/plugins/agent-light.js`
+- OpenCode：`~/.config/opencode/plugins/agent-light.js` 与 `~/.config/opencode/agent-light/connection.mjs`
 - Hermes：`~/.hermes/config.yaml`
 
-安装后重启相应 Agent。Codex 还需要在 CLI 中运行 `/hooks`，审阅并信任新增 Hook；Hermes 第一次发现每组 shell hook 时会请求同意，可用 `hermes hooks doctor` 检查安装状态。
+安装后重启相应 Agent。Hermes 可用 `hermes hooks doctor` 检查安装状态。
 
 从源码开发时可以直接运行：
 
@@ -74,6 +85,8 @@ ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Agent Light" \
 npm run install:adapters
 node scripts/install-agent-adapters.mjs codex
 ```
+
+开发桌面 UI 时如需避免修改当前账号的 Agent 配置，可设置 `AGENT_LIGHT_DISABLE_AUTO_CONNECT=1`。
 
 测试安装脚本时应使用临时 `HOME`，不要拿真实用户配置做测试数据。
 
@@ -111,7 +124,7 @@ npm run build
 npm run package:app
 ```
 
-输出位于 `releases/`。打包流程会重新执行类型检查、测试和构建，生成 `.icns` 图标，写入 `0.3.0` Info.plist，进行 ad-hoc codesign 并创建压缩 DMG。
+输出位于 `releases/`。打包流程会重新执行类型检查、测试和构建，生成 `.icns` 图标，写入 `0.4.0` Info.plist，进行 ad-hoc codesign 并创建压缩 DMG。
 
 ## VS Code 扩展
 
@@ -150,6 +163,7 @@ Adapter 只把状态、权限问题、命令或路径发送到本机 Agent Light
 ## 已知限制
 
 - 独立安装包目前只有 Apple Silicon 版本，尚未公证，也没有自动更新。
+- 自动发现依据本机 CLI、应用包和用户配置目录；安装在非常规路径且从未运行过的 Agent 可能需要先启动一次，再重新打开 Agent Light。
 - Cursor 和 Hermes 目前只做官方 Hook 生命周期监控，权限仍在它们自己的界面回答。
 - Codex 非托管 Hook 安装后必须由用户信任；具体工具覆盖随 Codex Hook 引擎版本变化。
 - VS Code 终端监控依赖 Shell Integration，SSH 子 shell 和复杂自定义终端可能无法识别。
