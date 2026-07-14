@@ -14,7 +14,7 @@ if (!providers.has(provider)) {
   process.exitCode = 2;
 } else {
   mkdirSync(support, { recursive: true });
-  for (const file of adapterFiles) copyFileSync(join(root, 'adapters', file), join(support, file));
+  for (const file of adapterFiles) copyIfChanged(join(root, 'adapters', file), join(support, file));
   if (provider === 'all' || provider === 'claude') installClaude();
   if (provider === 'all' || provider === 'codex') installCodex();
   if (provider === 'all' || provider === 'cursor') installCursor();
@@ -30,7 +30,7 @@ function installClaude() {
   for (const event of ['SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'SessionEnd']) addNestedHook(hooks, event, command, path, { adapter: 'claude-code-hook.mjs' });
   addNestedHook(hooks, 'PermissionRequest', command, path, { adapter: 'claude-code-hook.mjs', timeout: 570, statusMessage: 'Waiting for Agent Light' });
   addNestedHook(hooks, 'Notification', command, path, { adapter: 'claude-code-hook.mjs', matcher: 'permission_prompt|idle_prompt|elicitation_dialog' });
-  writeJson(path, settings);
+  writeJson(path, settings, true);
   process.stdout.write(`Claude Code adapter installed in ${path}\n`);
 }
 
@@ -41,7 +41,7 @@ function installCodex() {
   const command = nodeCommand(join(support, 'codex-hook.mjs'));
   for (const event of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStart', 'SubagentStop']) addNestedHook(hooks, event, command, path, { adapter: 'codex-hook.mjs' });
   addNestedHook(hooks, 'PermissionRequest', command, path, { adapter: 'codex-hook.mjs', timeout: 570, statusMessage: 'Waiting for Agent Light' });
-  writeJson(path, settings);
+  writeJson(path, settings, true);
   process.stdout.write(`Codex adapter installed in ${path}\nReview and trust it from Codex with /hooks after restarting Codex.\n`);
 }
 
@@ -52,17 +52,22 @@ function installCursor() {
   const hooks = hooksObject(settings, path);
   const command = nodeCommand(join(support, 'cursor-hook.mjs'));
   for (const event of ['sessionStart', 'beforeSubmitPrompt', 'preToolUse', 'postToolUse', 'postToolUseFailure', 'afterAgentResponse', 'stop', 'sessionEnd']) addCursorHook(hooks, event, command, path, 'cursor-hook.mjs');
-  writeJson(path, settings);
+  writeJson(path, settings, true);
   process.stdout.write(`Cursor adapter installed in ${path}\n`);
 }
 
 function installOpenCode() {
-  const target = join(homedir(), '.config', 'opencode', 'plugins', 'agent-light.js');
+  const configRoot = join(homedir(), '.config', 'opencode');
+  const target = join(configRoot, 'plugins', 'agent-light.js');
+  const helper = join(configRoot, 'agent-light', 'connection.mjs');
   const legacyTarget = join(dirname(target), 'agent-light.mjs');
+  const legacyHelper = join(dirname(target), 'connection.mjs');
   mkdirSync(dirname(target), { recursive: true });
-  copyFileSync(join(support, 'opencode-plugin.mjs'), target);
-  copyFileSync(join(support, 'connection.mjs'), join(dirname(target), 'connection.mjs'));
+  const plugin = readFileSync(join(support, 'opencode-plugin.mjs'), 'utf8').replace("'./connection.mjs'", "'../agent-light/connection.mjs'");
+  writeAtomic(target, plugin);
+  copyIfChanged(join(support, 'connection.mjs'), helper);
   if (existsSync(legacyTarget)) unlinkSync(legacyTarget);
+  if (existsSync(legacyHelper) && readFileSync(legacyHelper).equals(readFileSync(join(support, 'connection.mjs')))) unlinkSync(legacyHelper);
   process.stdout.write(`OpenCode adapter installed in ${target}\n`);
 }
 
@@ -71,7 +76,7 @@ function installHermes() {
   const command = nodeCommand(join(support, 'hermes-hook.mjs'));
   const events = ['on_session_start', 'pre_llm_call', 'pre_tool_call', 'post_tool_call', 'pre_approval_request', 'post_approval_response', 'on_session_end', 'on_session_finalize', 'on_session_reset', 'subagent_start', 'subagent_stop'];
   const existing = existsSync(path) ? readFileSync(path, 'utf8') : '';
-  writeAtomic(path, mergeHermesHooks(existing, events, command));
+  writeAtomic(path, mergeHermesHooks(existing, events, command), true);
   process.stdout.write(`Hermes adapter installed in ${path}\nApprove the new shell hooks on first use, then verify them with: hermes hooks doctor\n`);
 }
 
@@ -165,17 +170,31 @@ function readJson(path) {
   try { return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}; }
   catch (error) { throw new Error(`Cannot parse ${path}: ${error.message}`); }
 }
-function writeJson(path, value) { writeAtomic(path, `${JSON.stringify(value, null, 2)}\n`); }
-function writeAtomic(path, contents) {
+function writeJson(path, value, backup = false) { writeAtomic(path, `${JSON.stringify(value, null, 2)}\n`, backup); }
+function writeAtomic(path, contents, backup = false) {
+  const buffer = Buffer.isBuffer(contents) ? contents : Buffer.from(contents);
+  if (existsSync(path) && readFileSync(path).equals(buffer)) return false;
   mkdirSync(dirname(path), { recursive: true });
   const mode = existsSync(path) ? statSync(path).mode & 0o777 : 0o600;
+  if (backup) backupOnce(path, mode);
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
   try {
-    writeFileSync(temporary, contents, { mode });
+    writeFileSync(temporary, buffer, { mode });
     renameSync(temporary, path);
     chmodSync(path, mode);
   } finally {
     if (existsSync(temporary)) unlinkSync(temporary);
   }
+  return true;
+}
+function backupOnce(path, mode) {
+  if (!existsSync(path)) return;
+  const backup = `${path}.agent-light.bak`;
+  if (existsSync(backup)) return;
+  copyFileSync(path, backup);
+  chmodSync(backup, mode);
+}
+function copyIfChanged(source, target) {
+  return writeAtomic(target, readFileSync(source));
 }
 function isObject(value) { return Boolean(value) && typeof value === 'object' && !Array.isArray(value); }

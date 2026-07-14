@@ -13,9 +13,9 @@ The standalone Electron app owns a loopback-only HTTP/SSE hub authenticated by a
 
 Provider-specific adapters translate official hook or plugin events into the versioned `agent-light/1` contract. Permission requests include a provider, session ID, and request ID; replies are accepted only for the currently waiting request and are consumed once. Adapters fail open if the app is unavailable or a wait times out.
 
-The installer merges Agent Light entries into each provider's user configuration without replacing unrelated settings. Packaged hook commands use the Electron executable shipped inside `Agent Light.app` with `ELECTRON_RUN_AS_NODE=1`, so users do not need a separate Node.js installation.
+On every standalone-app launch, a background connector discovers providers from their user configuration directories, CLI locations, and macOS application bundles, then invokes the provider installer only for detected agents. The installer merges Agent Light entries into each provider's user configuration without replacing unrelated settings, keeps a one-time sibling backup before the first change, and skips identical writes. OpenCode's shared helper lives outside its auto-loaded `plugins` directory under an Agent Light-owned subdirectory. Packaged hook commands use the Electron executable shipped inside `Agent Light.app` with `ELECTRON_RUN_AS_NODE=1`, so users do not need a separate Node.js installation.
 
-The app remains a small always-on-top liquid-glass window and preserves the existing terminal-monitoring extension as a separate entry point sharing the same visual language.
+The app keeps a small always-on-top liquid-glass status window and adds a conventional macOS application menu plus a separate settings window. Manual discovery and connection use the same serialized connector as startup auto-connect, preventing concurrent configuration writes. The existing terminal-monitoring extension remains a separate entry point sharing the same visual language.
 
 ## Consequences
 
@@ -23,6 +23,7 @@ The app remains a small always-on-top liquid-glass window and preserves the exis
 - Request-scoped, single-consumption replies prevent stale approvals from authorizing a later request.
 - Every provider needs a maintained translation adapter as its official hook schema evolves.
 - User configuration changes remain visible and reversible, but providers that require hook trust or approval still require their normal first-run confirmation.
+- Discovery and installation are repeated idempotently so agents installed later and hook paths changed by moving the app are repaired on a later launch.
 - Distribution is self-contained but inherits Electron's application and DMG size.
 
 ## Alternatives considered
